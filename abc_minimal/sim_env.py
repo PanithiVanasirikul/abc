@@ -32,6 +32,21 @@ def task_prompt(task: str) -> str:
     return SIM_PROMPT_PREFIX + task_spec(task).prompt
 
 
+def _gripper_transform_options(gripper: str):
+    """XML transform options for a gripper choice, or None to keep the baked crank."""
+    if gripper == "crank":
+        return None
+    from abc_sim.scene_xml import SceneXmlTransformOptions
+
+    try:
+        flag = {"linear": "linear_gripper", "flexible": "flexible_gripper"}[gripper]
+    except KeyError:
+        raise ValueError(
+            f"unknown gripper {gripper!r}; expected crank, linear or flexible"
+        ) from None
+    return SceneXmlTransformOptions(**{flag: True})
+
+
 class SimTaskEnv:
     """One abc_sim world, stepped a single action at a time by the eval loop."""
 
@@ -45,6 +60,7 @@ class SimTaskEnv:
         prompt: str,
         camera_backend: str = "mjwarp",
         gpu_id: int | None = None,
+        gripper: str = "crank",
     ):
         self.spec = task_spec(task)
         self.height = height
@@ -70,6 +86,7 @@ class SimTaskEnv:
             camera_gpu_id=gpu_id,
             camera_height=height,
             camera_width=width,
+            scene_xml_transform_options=_gripper_transform_options(gripper),
         )
 
     def reset(self, seed: int, options: dict[str, Any] | None = None) -> dict[str, Any]:

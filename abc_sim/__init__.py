@@ -151,8 +151,10 @@ def make_env(
         scene_xml: Optional explicit XML file path for standard scene tasks.
         scene_xml_string: Optional in-memory XML override for standard scene
             tasks. Mutually exclusive with ``scene_xml``.
-        scene_xml_transform_options: Optional runtime XML transform options for
-            model-swapping tasks such as ``inhand_transfer``.
+        scene_xml_transform_options: Optional runtime XML transform options
+            (``SceneXmlTransformOptions``: gripper swap, clean, mocap). Applied to
+            the scene before the model is built, and re-applied by task randomizers
+            whenever they rebuild the scene.
         enable_task_randomizer: Whether to attach and prepare the task
             randomizer. Replay/export callers with a fully assembled scene XML
             should disable this so the randomizer cannot reload the model.
@@ -258,6 +260,16 @@ def make_env(
     if scene_xml_path is None:
         raise ValueError(
             f"Unknown task '{task}'. Available: {list(list_scene_task_names())}"
+        )
+
+    # Apply the XML transforms (gripper swap, clean, mocap) up front for ordinary scene
+    # tasks. Without this the options only ever took effect when a task randomizer rebuilt
+    # the scene on reset, so a gripper choice never reached the initial model.
+    if scene_xml_string is None and scene_xml_transform_options is not None:
+        from abc_sim.scene_xml import build_scene_xml
+
+        scene_xml_string, _ = build_scene_xml(
+            scene_xml_path, options=scene_xml_transform_options
         )
 
     tmp_scene_xml_path: Path | None = None

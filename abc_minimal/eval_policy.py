@@ -383,6 +383,7 @@ def _make_env(config: SimEvalConfig, camera_keys: tuple[str, ...]) -> SimTaskEnv
         prompt=config.prompt,
         camera_backend=config.camera_backend,
         gpu_id=config.gpu_id,
+        gripper=config.gripper,
     )
 
 

@@ -1,0 +1,6 @@
+Columns	State (measured robot joints)	Action (commanded joints)
+
+0–5 / 14–19	left_joint1..6	left_joint1..6
+6 / 20	left_gripper	left_gripper
+7–12 / 21–26	right_joint1..6	right_joint1..6
+13 / 27	right_gripper	right_gripper

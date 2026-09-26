@@ -1,0 +1,13 @@
+{
+  "archive": "linear_gripper.tar.gz",
+  "contains": [
+    "linear_gripper"
+  ],
+  "extract_dir": "abc_sim/models/assets",
+  "file_count": 5,
+  "name": "linear_gripper",
+  "sha256": "8607b7bd566f96b08dc78c28e98e6691d686cfe54f0c5ccaac33a7ec2991aee8",
+  "size_bytes": 389711,
+  "unpacked_size_bytes": 1203726,
+  "uri": "https://abc-data.timehorizons.org/sim_assets/linear_gripper.tar.gz"
+}

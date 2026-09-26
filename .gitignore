@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 cache/
+cache_old/
 uv.lock
 checkpoints/
 outputs/

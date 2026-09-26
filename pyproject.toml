@@ -54,6 +54,11 @@ override-dependencies = [
     "mujoco~=3.8.0",
     "tyro>=1.0.5",
 ]
+build-constraint-dependencies = [
+    # ruckig 0.15.3 has no wheels; its sdist uses cmake.targets, which scikit-build-core>=0.10 rejects
+    "scikit-build-core<0.10",
+]
+
 
 [tool.setuptools.packages.find]
 include = ["abc_minimal*", "abc_sim*", "deploy*"]

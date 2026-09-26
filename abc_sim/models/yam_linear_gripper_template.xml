@@ -1,0 +1,121 @@
+<mujoco model="yam_linear_gripper_template">
+  <!--
+    i2rt YAM linear_4310 gripper, as a drop-in replacement for the baked crank gripper.
+
+    Source: https://github.com/i2rt-robotics/i2rt (MIT), i2rt/robot_models/gripper/linear_4310/.
+    The meshes in assets/linear_gripper/ are that directory's gripper.stl / tip_left.stl /
+    tip_right.stl verbatim; linear_4310.xml is kept beside them for provenance.
+
+    FRAME MAPPING.  Upstream ships each gripper as a standalone body that is merged into the
+    arm's joint6 mount frame.  abc's scenes instead bake the gripper straight into
+    `{side}_link_6`, whose frame is the upstream mount frame turned -90 deg about X.  That was
+    derived from the crank pair and checked exactly against three of abc's baked crank values
+    (the housing mesh geom and both finger body origins).  So every body below keeps upstream's
+    numbers verbatim and the whole assembly is wrapped in `{side}_linear_gripper`, which carries
+    the single compensating rotation quat="0 -0.707107 0.707107 0".  Do not "simplify" that
+    wrapper away by folding the rotation into the children.
+
+    STROKE DIRECTION.  Upstream's joint7/joint8 already match abc's convention: qpos 0 is fully
+    closed (the two tip meshes touch to within 0.1 mm) and qpos 0.0475 is fully open, so policy
+    value 1.0 still means "open" and env.py's _GRIPPER_CTRL_MAX (0.0475) needs no change.  The
+    joints are renamed to {side}_left_finger / {side}_right_finger and the actuator to
+    {side}_gripper so env.py:_build_index_maps keeps resolving them by name.  Note the mirror
+    equality is polycoef="0 1 0 0 0", NOT the crank's "0 -1 0 0 0" : the two slide axes already
+    oppose each other.
+
+    COLLISION.  Upstream's tip meshes carry no collision class, so they would collide as the
+    convex hull of finger+carriage : a blob that self-intersects by 46 mm when closed.  The mesh
+    geoms are therefore class="visual" here and the contact geometry is hand-fitted primitives,
+    the same approach abc already takes for the crank and flexible grippers: a thin `_pad` box on
+    the flat inner face of each blade (measured at y = +/-0.0005 in the gripper frame, which is
+    where the two tips meet when closed), a `_blade` box behind it, and two boxes for the housing.
+    The pads carry the high-friction / stiff-solref tuning used by the crank fingertips.
+  -->
+  <compiler angle="radian" meshdir="assets/linear_gripper"/>
+
+  <asset>
+    <mesh name="linear_gripper_body" file="gripper.stl"/>
+    <mesh name="linear_tip_left" file="tip_left.stl"/>
+    <mesh name="linear_tip_right" file="tip_right.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="left_linear_gripper" pos="0 0 0" quat="0 -0.707107 0.707107 0" gravcomp="1">
+      <inertial pos="-3.57066e-05 0.000249371 -0.0293133" quat="0.667981 0.744113 -0.00433092 0.00882801"
+        mass="0.553219" diaginertia="0.000409686 0.000369758 0.000324415"/>
+      <geom class="visual" pos="-0.014 -0.0463995 0.0731" quat="1 0 0 0" mesh="linear_gripper_body"/>
+      <geom name="left_linear_module_col" class="collision" type="box" size="0.0325 0.051 0.0105" pos="0 0 -0.053"/>
+      <geom name="left_linear_mount_col" class="collision" type="box" size="0.028 0.028 0.008" pos="0 0 0.005"/>
+      <body name="left_tip_left" pos="-0.0238981 0.0450619 -0.0545599" quat="0.499998 -0.5 -0.5 -0.500002" gravcomp="1">
+        <inertial pos="-0.0224716 0.0143408 -0.0426253" quat="0.498899 0.455348 -0.0576406 0.735143"
+          mass="0.0710042" diaginertia="6.24193e-05 6.01079e-05 2.83591e-05"/>
+        <joint class="finger" name="left_left_finger" axis="0 0 -1" range="0 0.0475"/>
+        <geom class="visual" pos="0.129783 0.00999321 -0.0914614" quat="0.499998 0.5 0.500002 0.5" mesh="linear_tip_left"/>
+        <geom name="left_tip_left_pad" class="collision" type="box" size="0.01 0.002 0.01"
+          pos="-0.080140 0.023898 -0.046562" quat="0.499998 0.5 0.5 0.500002"
+          friction="4.0 0.1 0.01" solimp="0.998 0.998 0.001" solref="0.004 1" priority="2"/>
+        <geom name="left_tip_left_blade" class="collision" type="box" size="0.019 0.0085 0.02"
+          pos="-0.050440 0.023898 -0.056062" quat="0.499998 0.5 0.5 0.500002"/>
+      </body>
+      <body name="left_tip_right" pos="0.0238981 -0.0450619 -0.0545599" quat="0.707105 0.707108 0 0" gravcomp="1">
+        <inertial pos="-0.0143408 -0.0224716 -0.0426253" quat="0.281222 0.8726 0.16705 -0.362738"
+          mass="0.0710042" diaginertia="6.24193e-05 6.01079e-05 2.83591e-05"/>
+        <joint class="finger" name="left_right_finger" axis="0 0 -1" range="0 0.0475"/>
+        <geom class="visual" pos="-0.0379932 0.129783 0.00133753" quat="0.707105 -0.707108 0 0" mesh="linear_tip_right"/>
+        <geom name="left_tip_right_pad" class="collision" type="box" size="0.01 0.002 0.01"
+          pos="-0.023898 -0.080140 -0.046562" quat="0.707105 -0.707108 0 0"
+          friction="4.0 0.1 0.01" solimp="0.998 0.998 0.001" solref="0.004 1" priority="2"/>
+        <geom name="left_tip_right_blade" class="collision" type="box" size="0.019 0.0085 0.02"
+          pos="-0.023898 -0.050440 -0.056062" quat="0.707105 -0.707108 0 0"/>
+      </body>
+    </body>
+    <body name="right_linear_gripper" pos="0 0 0" quat="0 -0.707107 0.707107 0" gravcomp="1">
+      <inertial pos="-3.57066e-05 0.000249371 -0.0293133" quat="0.667981 0.744113 -0.00433092 0.00882801"
+        mass="0.553219" diaginertia="0.000409686 0.000369758 0.000324415"/>
+      <geom class="visual" pos="-0.014 -0.0463995 0.0731" quat="1 0 0 0" mesh="linear_gripper_body"/>
+      <geom name="right_linear_module_col" class="collision" type="box" size="0.0325 0.051 0.0105" pos="0 0 -0.053"/>
+      <geom name="right_linear_mount_col" class="collision" type="box" size="0.028 0.028 0.008" pos="0 0 0.005"/>
+      <body name="right_tip_left" pos="-0.0238981 0.0450619 -0.0545599" quat="0.499998 -0.5 -0.5 -0.500002" gravcomp="1">
+        <inertial pos="-0.0224716 0.0143408 -0.0426253" quat="0.498899 0.455348 -0.0576406 0.735143"
+          mass="0.0710042" diaginertia="6.24193e-05 6.01079e-05 2.83591e-05"/>
+        <joint class="finger" name="right_left_finger" axis="0 0 -1" range="0 0.0475"/>
+        <geom class="visual" pos="0.129783 0.00999321 -0.0914614" quat="0.499998 0.5 0.500002 0.5" mesh="linear_tip_left"/>
+        <geom name="right_tip_left_pad" class="collision" type="box" size="0.01 0.002 0.01"
+          pos="-0.080140 0.023898 -0.046562" quat="0.499998 0.5 0.5 0.500002"
+          friction="4.0 0.1 0.01" solimp="0.998 0.998 0.001" solref="0.004 1" priority="2"/>
+        <geom name="right_tip_left_blade" class="collision" type="box" size="0.019 0.0085 0.02"
+          pos="-0.050440 0.023898 -0.056062" quat="0.499998 0.5 0.5 0.500002"/>
+      </body>
+      <body name="right_tip_right" pos="0.0238981 -0.0450619 -0.0545599" quat="0.707105 0.707108 0 0" gravcomp="1">
+        <inertial pos="-0.0143408 -0.0224716 -0.0426253" quat="0.281222 0.8726 0.16705 -0.362738"
+          mass="0.0710042" diaginertia="6.24193e-05 6.01079e-05 2.83591e-05"/>
+        <joint class="finger" name="right_right_finger" axis="0 0 -1" range="0 0.0475"/>
+        <geom class="visual" pos="-0.0379932 0.129783 0.00133753" quat="0.707105 -0.707108 0 0" mesh="linear_tip_right"/>
+        <geom name="right_tip_right_pad" class="collision" type="box" size="0.01 0.002 0.01"
+          pos="-0.023898 -0.080140 -0.046562" quat="0.707105 -0.707108 0 0"
+          friction="4.0 0.1 0.01" solimp="0.998 0.998 0.001" solref="0.004 1" priority="2"/>
+        <geom name="right_tip_right_blade" class="collision" type="box" size="0.019 0.0085 0.02"
+          pos="-0.023898 -0.050440 -0.056062" quat="0.707105 -0.707108 0 0"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <equality>
+    <joint joint1="left_left_finger" joint2="left_right_finger" polycoef="0 1 0 0 0"/>
+    <joint joint1="right_left_finger" joint2="right_right_finger" polycoef="0 1 0 0 0"/>
+  </equality>
+
+  <actuator>
+    <position class="finger" name="left_gripper" joint="left_left_finger"/>
+    <position class="finger" name="right_gripper" joint="right_left_finger"/>
+  </actuator>
+
+  <contact>
+    <exclude body1="left_linear_gripper" body2="left_tip_left"/>
+    <exclude body1="left_linear_gripper" body2="left_tip_right"/>
+    <exclude body1="left_tip_left" body2="left_tip_right"/>
+    <exclude body1="right_linear_gripper" body2="right_tip_left"/>
+    <exclude body1="right_linear_gripper" body2="right_tip_right"/>
+    <exclude body1="right_tip_left" body2="right_tip_right"/>
+  </contact>
+</mujoco>

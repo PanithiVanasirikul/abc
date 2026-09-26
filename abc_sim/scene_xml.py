@@ -12,8 +12,8 @@ _FLEXIBLE_TEMPLATE_SCENE = Path(__file__).resolve().parent / "models" / "yam_fle
 _FLEXIBLE_TEMPLATE_MESH_DIR = _FLEXIBLE_TEMPLATE_SCENE.parent / "assets"
 _FLEXIBLE_MESH_NAMES = ("flexible_base", "linear_module", "soft_tips")
 _FLEXIBLE_BODY_SPECS = (
-    ("left_link_6", {"left_link_left_finger", "left_link_right_finger", "left_flex_gripper"}, "left_flex_gripper"),
-    ("right_link_6", {"right_link_left_finger", "right_link_right_finger", "right_flex_gripper"}, "right_flex_gripper"),
+    ("left_link_6", {"left_link_left_finger", "left_link_right_finger", "left_flex_gripper", "left_linear_gripper"}, "left_flex_gripper"),
+    ("right_link_6", {"right_link_left_finger", "right_link_right_finger", "right_flex_gripper", "right_linear_gripper"}, "right_flex_gripper"),
 )
 _FLEXIBLE_EQUALITY_PAIRS = (
     ("left_left_finger", "left_right_finger"),
@@ -28,6 +28,29 @@ _FLEXIBLE_CONTACT_PAIRS = (
     ("right_flex_gripper", "right_linear_module_2"),
     ("right_linear_module", "right_linear_module_2"),
 )
+_LINEAR_TEMPLATE_SCENE = Path(__file__).resolve().parent / "models" / "yam_linear_gripper_template.xml"
+_LINEAR_TEMPLATE_MESH_DIR = _LINEAR_TEMPLATE_SCENE.parent / "assets" / "linear_gripper"
+_LINEAR_MESH_NAMES = ("linear_gripper_body", "linear_tip_left", "linear_tip_right")
+_LINEAR_BODY_SPECS = (
+    ("left_link_6", {"left_link_left_finger", "left_link_right_finger", "left_linear_gripper", "left_flex_gripper"}, "left_linear_gripper"),
+    ("right_link_6", {"right_link_left_finger", "right_link_right_finger", "right_linear_gripper", "right_flex_gripper"}, "right_linear_gripper"),
+)
+_LINEAR_EQUALITY_PAIRS = (
+    ("left_left_finger", "left_right_finger"),
+    ("right_left_finger", "right_right_finger"),
+)
+_LINEAR_ACTUATORS = ("left_gripper", "right_gripper")
+_LINEAR_CONTACT_PAIRS = (
+    ("left_linear_gripper", "left_tip_left"),
+    ("left_linear_gripper", "left_tip_right"),
+    ("left_tip_left", "left_tip_right"),
+    ("right_linear_gripper", "right_tip_left"),
+    ("right_linear_gripper", "right_tip_right"),
+    ("right_tip_left", "right_tip_right"),
+)
+# Tool centre of the linear_4310, measured from its tip meshes: 144.65 mm along link_6's +Z
+# against the crank's 134.7 mm. The mocap/VR welds target these sites, so they move with it.
+_LINEAR_GRASP_SITE_Z = 0.14465
 _CLEAN_CAMERA_BODIES = ("overhead_camera", "left_side_camera", "right_side_camera")
 _CLEAN_GEOM_NAMES = ("floor", "back_wall", "left_wall", "right_wall")
 _CLEAN_GEOM_MESHES = ("base_visual_gate",)
@@ -38,6 +61,7 @@ class SceneXmlTransformOptions:
     clean: bool = False
     mocap: bool = False
     flexible_gripper: bool = False
+    linear_gripper: bool = False
     debug: bool = False
 
 
@@ -151,6 +175,121 @@ def apply_flexible_gripper_xml(xml: str) -> str:
             contact.append(copy.deepcopy(exclude))
             seen_pairs.add(pair)
 
+    _prune_dangling_excludes(root)
+    return _xml_to_string(root)
+
+
+def _prune_dangling_excludes(root: ET.Element) -> None:
+    """Drop <contact> excludes naming bodies a gripper swap has removed."""
+    contact = root.find("contact")
+    if contact is None:
+        return
+    known = {b.get("name") for b in root.iter("body")}
+    for child in list(contact):
+        if child.tag != "exclude":
+            continue
+        if child.get("body1") not in known or child.get("body2") not in known:
+            contact.remove(child)
+
+
+def _copy_linear_mesh_for_scene(template_mesh: ET.Element) -> ET.Element:
+    mesh = copy.deepcopy(template_mesh)
+    file_attr = mesh.get("file")
+    if file_attr and not Path(file_attr).is_absolute():
+        mesh.set("file", str((_LINEAR_TEMPLATE_MESH_DIR / file_attr).resolve()))
+    return mesh
+
+
+def apply_linear_gripper_xml(xml: str) -> str:
+    """Swap the baked crank gripper for the i2rt linear_4310 on both arms."""
+    if not _LINEAR_TEMPLATE_MESH_DIR.is_dir():
+        raise FileNotFoundError(
+            f"linear gripper meshes are missing from {_LINEAR_TEMPLATE_MESH_DIR}. "
+            "Install them with: uv run prepare.py --sim-package linear_gripper"
+        )
+    root = _load_xml_root(xml)
+    template_root = _load_xml_root(_LINEAR_TEMPLATE_SCENE)
+
+    asset = root.find("asset")
+    template_asset = template_root.find("asset")
+    if asset is None or template_asset is None:
+        raise ValueError("Scene XML is missing <asset> section")
+
+    for mesh_name in _LINEAR_MESH_NAMES:
+        for child in list(asset):
+            if child.tag == "mesh" and child.get("name") == mesh_name:
+                asset.remove(child)
+        template_mesh = template_asset.find(f"./mesh[@name='{mesh_name}']")
+        if template_mesh is None:
+            raise ValueError(f"Linear gripper template is missing mesh '{mesh_name}'")
+        asset.append(_copy_linear_mesh_for_scene(template_mesh))
+
+    for parent_name, remove_names, template_name in _LINEAR_BODY_SPECS:
+        parent = root.find(f".//body[@name='{parent_name}']")
+        template_body = template_root.find(f".//body[@name='{template_name}']")
+        if parent is None or template_body is None:
+            raise ValueError(f"Unable to locate linear gripper body '{template_name}'")
+        # link_6's own geoms are the crank housing, not arm geometry: two visual meshes
+        # (model2__12/__13) plus three collision capsules, identical in every scene. The
+        # linear housing inside the template body replaces all five.
+        for child in list(parent):
+            if child.tag == "geom":
+                parent.remove(child)
+            elif child.tag == "body" and child.get("name") in remove_names:
+                parent.remove(child)
+        side = parent_name.split("_", 1)[0]
+        grasp_site = parent.find(f"./site[@name='{side}_grasp_site']")
+        if grasp_site is not None:
+            pos = (grasp_site.get("pos") or "0 0 0").split()
+            grasp_site.set("pos", f"{pos[0]} {pos[1]} {_LINEAR_GRASP_SITE_Z}")
+        parent.append(copy.deepcopy(template_body))
+
+    equality = root.find("equality")
+    template_equality = template_root.find("equality")
+    if equality is None or template_equality is None:
+        raise ValueError("Scene XML is missing <equality> section")
+    for child in list(equality):
+        if child.tag != "joint":
+            continue
+        pair = (child.get("joint1"), child.get("joint2"))
+        if pair in _LINEAR_EQUALITY_PAIRS or pair[::-1] in _LINEAR_EQUALITY_PAIRS:
+            equality.remove(child)
+    for joint1, joint2 in _LINEAR_EQUALITY_PAIRS:
+        template_joint = template_equality.find(f"./joint[@joint1='{joint1}'][@joint2='{joint2}']")
+        if template_joint is None:
+            raise ValueError(f"Linear gripper template is missing equality joint {joint1}/{joint2}")
+        equality.append(copy.deepcopy(template_joint))
+
+    actuator = root.find("actuator")
+    template_actuator = template_root.find("actuator")
+    if actuator is None or template_actuator is None:
+        raise ValueError("Scene XML is missing <actuator> section")
+    for actuator_name in _LINEAR_ACTUATORS:
+        template_position = template_actuator.find(f"./position[@name='{actuator_name}']")
+        if template_position is None:
+            raise ValueError(f"Linear gripper template is missing actuator '{actuator_name}'")
+        _replace_named_child(actuator, "position", actuator_name, template_position)
+
+    template_contact = template_root.find("contact")
+    contact = root.find("contact")
+    if template_contact is not None:
+        if contact is None:
+            contact = ET.SubElement(root, "contact")
+        for child in list(contact):
+            if child.tag != "exclude":
+                continue
+            pair = (child.get("body1"), child.get("body2"))
+            if pair in _LINEAR_CONTACT_PAIRS or pair[::-1] in _LINEAR_CONTACT_PAIRS:
+                contact.remove(child)
+        seen_pairs: set[tuple[str | None, str | None]] = set()
+        for exclude in template_contact.findall("./exclude"):
+            pair = (exclude.get("body1"), exclude.get("body2"))
+            if pair not in _LINEAR_CONTACT_PAIRS or pair in seen_pairs:
+                continue
+            contact.append(copy.deepcopy(exclude))
+            seen_pairs.add(pair)
+
+    _prune_dangling_excludes(root)
     return _xml_to_string(root)
 
 
@@ -219,6 +358,11 @@ def transform_scene_xml(
     options: SceneXmlTransformOptions,
 ) -> tuple[str, tuple[str, ...]]:
     edits: list[str] = []
+    if options.flexible_gripper and options.linear_gripper:
+        raise ValueError("flexible_gripper and linear_gripper are mutually exclusive")
+    if options.linear_gripper:
+        xml = apply_linear_gripper_xml(xml)
+        edits.append("linear_gripper")
     if options.flexible_gripper:
         xml = apply_flexible_gripper_xml(xml)
         edits.append("flexible_gripper")
@@ -246,6 +390,7 @@ __all__ = [
     "SceneXmlTransformOptions",
     "apply_clean_xml",
     "apply_flexible_gripper_xml",
+    "apply_linear_gripper_xml",
     "apply_mocap_xml",
     "build_scene_xml",
     "transform_scene_xml",
